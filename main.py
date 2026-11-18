@@ -1,155 +1,24 @@
-def create_performance_plots():
-    """Cria gráficos de análise de performance avançados"""
-    if not METRICS_DATA:
-        print("❌ Não há dados para plotar")
-        return
-    
-    df = pd.DataFrame(METRICS_DATA)
-    
-    # Configuração dos plots
-    plt.style.use('seaborn-v0_8')
-    fig = plt.figure(figsize=(20, 16))
-    
-    # Layout dos subplots (4x3 grid)
-    gs = fig.add_gridspec(4, 3, hspace=0.3, wspace=0.3)
-    
-    # 1. FPS por modelo (Box plot para mostrar variabilidade)
-    ax1 = fig.add_subplot(gs[0, 0])
-    sns.boxplot(data=df, x='model', y='fps', ax=ax1)
-    ax1.set_title('FPS Distribution by Model', fontweight='bold')
-    ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45)
-    ax1.set_ylabel('FPS')
-    
-    # 2. Tempo de processamento vs. Objetos detectados (com tamanho = confiança)
-    ax2 = fig.add_subplot(gs[0, 1])
-    for model in df['model'].unique():
-        model_data = df[df['model'] == model]
-        ax2.scatter(model_data['processing_time'], model_data['objects_count'], 
-                   s=model_data['confidence_mean']*100, alpha=0.6, label=model)
-    ax2.set_xlabel('Processing Time (seconds)')
-    ax2.set_ylabel('Objects Detected')
-    ax2.set_title('Speed vs Detection Rate\n(bubble size = avg confidence)')
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    # 3. Distribuição de confiança por modelo
-    ax3 = fig.add_subplot(gs[0, 2])
-    df.boxplot(column='confidence_mean', by='model', ax=ax3)
-    ax3.set_title('Confidence Distribution by Model')
-    ax3.set_xlabel('Model')
-    ax3.set_ylabel('Average Confidence')
-    plt.suptitle('')  # Remove o título automático do pandas
-    
-    # 4. Uso de recursos - CPU
-    ax4 = fig.add_subplot(gs[1, 0])
-    if RESOURCE_DATA:
-        resource_df = pd.DataFrame(RESOURCE_DATA)
-        sns.barplot(data=resource_df, x='model', y='cpu_avg', ax=ax4)
-        ax4.set_title('Average CPU Usage by Model')
-        ax4.set_xticklabels(ax4.get_xticklabels(), rotation=45)
-        ax4.set_ylabel('CPU Usage (%)')
-    
-    # 5. Uso de recursos - Memória
-    ax5 = fig.add_subplot(gs[1, 1])
-    if RESOURCE_DATA:
-        sns.barplot(data=resource_df, x='model', y='memory_avg', ax=ax5)
-        ax5.set_title('Average Memory Usage by Model')
-        ax5.set_xticklabels(ax5.get_xticklabels(), rotation=45)
-        ax5.set_ylabel('Memory Usage (%)')
-    
-    # 6. Classes únicas detectadas por modelo
-    ax6 = fig.add_subplot(gs[1, 2])
-    avg_unique_classes = df.groupby('model')['unique_classes'].mean().sort_values(ascending=False)
-    avg_unique_classes.plot(kind='bar', ax=ax6, color='lightcoral')
-    ax6.set_title('Average Unique Classes Detected')
-    ax6.set_ylabel('Number of Classes')
-    ax6.tick_params(axis='x', rotation=45)
-    
-    # 7. Análise temporal - FPS ao longo das iterações
-    ax7 = fig.add_subplot(gs[2, 0])
-    for model in df['model'].unique():
-        model_data = df[df['model'] == model]
-        ax7.plot(model_data['iteration'], model_data['fps'], 
-                marker='o', alpha=0.7, label=model, linewidth=2)
-    ax7.set_xlabel('Iteration')
-    ax7.set_ylabel('FPS')
-    ax7.set_title('FPS Evolution Over Time')
-    ax7.legend()
-    ax7.grid(True, alpha=0.3)
-    
-    # 8. Distribuição de tamanhos de objetos
-    ax8 = fig.add_subplot(gs[2, 1])
-    size_data = []
-    for model in df['model'].unique():
-        model_data = df[df['model'] == model]
-        avg_small = model_data['small_objects'].mean()
-        avg_medium = model_data['medium_objects'].mean()
-        avg_large = model_data['large_objects'].mean()
-        size_data.append([model, 'Small', avg_small])
-        size_data.append([model, 'Medium', avg_medium])
-        size_data.append([model, 'Large', avg_large])
-    
-    size_df = pd.DataFrame(size_data, columns=['Model', 'Size', 'Count'])
-    sns.barplot(data=size_df, x='Model', y='Count', hue='Size', ax=ax8)
-    ax8.set_title('Object Size Distribution by Model')
-    ax8.set_xticklabels(ax8.get_xticklabels(), rotation=45)
-    ax8.set_ylabel('Average Object Count')
-    
-    # 9. Correlação entre métricas
-    ax9 = fig.add_subplot(gs[2, 2])
-    correlation_cols = ['fps', 'objects_count', 'confidence_mean', 'unique_classes']
-    corr_matrix = df[correlation_cols].corr()
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, ax=ax9)
-    ax9.set_title('Metrics Correlation Matrix')
-    
-    # 10. Performance por classe (top classes)
-    ax10 = fig.add_subplot(gs[3, :])
-    if CLASS_PERFORMANCE_DATA:
-        class_df = pd.DataFrame(CLASS_PERFORMANCE_DATA)
-        # Agrupa por modelo e classe, calculando médias
-        class_summary = class_df.groupby(['model', 'class']).agg({
-            'count': 'mean',
-            'avg_confidence': 'mean'
-        }).reset_index()
-        
-        # Pega apenas as top classes
-        top_classes = class_summary.groupby('class')['count'].sum().sort_values(ascending=False).head(6).index
-        class_summary_filtered = class_summary[class_summary['class'].isin(top_classes)]
-        
-        # Pivota para criar heatmap
-        pivot_data = class_summary_filtered.pivot(index='model', columns='class', values='count')
-        sns.heatmap(pivot_data, annot=True, fmt='.1f', cmap='Blues', ax=ax10)
-        ax10.set_title('Average Detection Count by Model and Class')
-        ax10.set_xlabel('Object Class')
-        ax10.set_ylabel('Model')
-    
-    plt.suptitle('YOLO Multi-Version Performance Analysis - Comprehensive Report', 
-                 fontsize=16, fontweight='bold', y=0.98)
-    
-    # Salva o gráfico
-    plot_filename = os.path.join(OUTPUT_DIR, f"comprehensive_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-    print(f"📊 Gráfico abrangente salvo: {plot_filename}")
-    
-    # Cria gráfico adicional para análise estatística
-    create_statistical#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import qi
 import time
 import os
 from datetime import datetime
+import platform
+import sys
+import math
+from importlib import metadata
 import cv2
 import numpy as np
 from PIL import Image
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import psutil
 import threading
 import GPUtil
-from collections import defaultdict, Counter
-from scipy import stats
+from collections import Counter
 
 # YOLO (Ultralytics)
 from ultralytics import YOLO
@@ -195,17 +64,6 @@ YOLO_MODELS = {
 METRICS_DATA = []
 RESOURCE_DATA = []
 CLASS_PERFORMANCE_DATA = []
-SCENARIO_DATA = []
-
-# Cenários de teste para análise de robustez
-TEST_SCENARIOS = {
-    "normal": "Iluminação normal",
-    "low_light": "Pouca luz",
-    "high_contrast": "Alto contraste",
-    "crowded": "Muitos objetos",
-    "distant": "Objetos distantes"
-}
-
 # Classes COCO mais comuns para análise detalhada
 TARGET_CLASSES = ['person', 'chair', 'table', 'laptop', 'cell phone', 'book', 'bottle', 'cup']
 
@@ -382,10 +240,10 @@ def capture_image_alternative(session):
         return image
         
     except Exception as e:
-        print(f"❌ Método alternativo também falhou: {e}")
-        print("🔵 Usando imagem de fallback...")
-        # Retorna uma imagem azul como fallback
-        return Image.new('RGB', (640, 480), color='blue')
+        print(f"Falha no método alternativo de captura: {e}")
+        raise RuntimeError(
+            "Não foi possível obter uma imagem real do NAO; a iteração será descartada."
+        ) from e
 
 # ---------------------------
 # Configuração e execução multi-YOLO
@@ -735,160 +593,298 @@ def print_benchmark_results(results_dict, iteration):
         print(f"     (área média: {size_stats['mean_area']:.0f} pixels²)")
 
 def create_performance_plots():
-    """Cria gráficos de análise de performance"""
+    """Gera gráficos consolidados usando os nomes reais das métricas coletadas."""
     if not METRICS_DATA:
-        print("❌ Não há dados para plotar")
+        print("Não há dados para gerar gráficos.")
         return
-    
-    df = pd.DataFrame(METRICS_DATA)
-    
-    # Configuração dos plots
-    plt.style.use('seaborn-v0_8')
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('YOLO Multi-Version Performance Analysis', fontsize=16, fontweight='bold')
-    
-    # 1. Tempo de processamento médio por modelo
-    avg_time = df.groupby('model')['processing_time'].mean().sort_values()
-    avg_time.plot(kind='bar', ax=axes[0,0], color='skyblue')
-    axes[0,0].set_title('Average Processing Time by Model')
-    axes[0,0].set_ylabel('Time (seconds)')
-    axes[0,0].tick_params(axis='x', rotation=45)
-    
-    # 2. Número médio de objetos detectados por modelo
-    avg_objects = df.groupby('model')['objects_count'].mean().sort_values(ascending=False)
-    avg_objects.plot(kind='bar', ax=axes[0,1], color='lightgreen')
-    axes[0,1].set_title('Average Objects Detected by Model')
-    axes[0,1].set_ylabel('Number of Objects')
-    axes[0,1].tick_params(axis='x', rotation=45)
-    
-    # 3. Confiança média por modelo
-    avg_confidence = df.groupby('model')['avg_confidence'].mean().sort_values(ascending=False)
-    avg_confidence.plot(kind='bar', ax=axes[1,0], color='orange')
-    axes[1,0].set_title('Average Confidence by Model')
-    axes[1,0].set_ylabel('Confidence Score')
-    axes[1,0].tick_params(axis='x', rotation=45)
-    
-    # 4. Scatter plot: Tempo vs Objetos detectados
-    for model in df['model'].unique():
-        model_data = df[df['model'] == model]
-        axes[1,1].scatter(model_data['processing_time'], model_data['objects_count'], 
-                         label=model, alpha=0.7)
-    
-    axes[1,1].set_xlabel('Processing Time (seconds)')
-    axes[1,1].set_ylabel('Objects Detected')
-    axes[1,1].set_title('Processing Time vs Objects Detected')
-    axes[1,1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    plt.tight_layout()
-    
-    # Salva o gráfico
-    plot_filename = os.path.join(OUTPUT_DIR, f"performance_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-    print(f"📊 Gráfico salvo: {plot_filename}")
-    
-    # Mostra o gráfico
-    plt.show()
 
-def save_benchmark_results(annotated_images, results_dict, iteration):
-    """Salva todos os resultados do benchmark"""
+    df = pd.DataFrame(METRICS_DATA)
+    figures_dir = os.path.join(OUTPUT_DIR, "figures")
+    os.makedirs(figures_dir, exist_ok=True)
+
+    fig, axes = plt.subplots(2, 3, figsize=(22, 13))
+    fig.suptitle("NAO Multi-YOLO Benchmark — Performance Summary", fontsize=16)
+
+    fps_summary = df.groupby("model")["fps"].agg(["mean", "std"]).sort_values("mean", ascending=False)
+    fps_summary["std"] = fps_summary["std"].fillna(0)
+    axes[0, 0].bar(fps_summary.index, fps_summary["mean"], yerr=fps_summary["std"], capsize=2)
+    axes[0, 0].set_title("Mean FPS by model (± SD)")
+    axes[0, 0].set_ylabel("Frames per second")
+    axes[0, 0].tick_params(axis="x", labelrotation=60, labelsize=7)
+    axes[0, 0].grid(axis="y", alpha=0.25)
+
+    time_summary = df.groupby("model")["processing_time"].mean().sort_values()
+    axes[0, 1].bar(time_summary.index, time_summary.values)
+    axes[0, 1].set_title("Mean inference time by model")
+    axes[0, 1].set_ylabel("Seconds")
+    axes[0, 1].tick_params(axis="x", labelrotation=60, labelsize=7)
+    axes[0, 1].grid(axis="y", alpha=0.25)
+
+    confidence_summary = df.groupby("model")["confidence_mean"].mean().sort_values(ascending=False)
+    axes[0, 2].bar(confidence_summary.index, confidence_summary.values)
+    axes[0, 2].set_title("Mean detection confidence score")
+    axes[0, 2].set_ylabel("Confidence score")
+    axes[0, 2].tick_params(axis="x", labelrotation=60, labelsize=7)
+    axes[0, 2].grid(axis="y", alpha=0.25)
+
+    objects_summary = df.groupby("model")["objects_count"].mean().sort_values(ascending=False)
+    axes[1, 0].bar(objects_summary.index, objects_summary.values)
+    axes[1, 0].set_title("Mean number of detections per frame")
+    axes[1, 0].set_ylabel("Detections")
+    axes[1, 0].tick_params(axis="x", labelrotation=60, labelsize=7)
+    axes[1, 0].grid(axis="y", alpha=0.25)
+
+    if RESOURCE_DATA:
+        resource_df = pd.DataFrame(RESOURCE_DATA)
+        resource_summary = resource_df.groupby("model")[["cpu_avg", "memory_avg", "gpu_avg"]].mean()
+        resource_summary = resource_summary.sort_index()
+        resource_summary.plot(kind="bar", ax=axes[1, 1], width=0.85)
+        axes[1, 1].set_title("Mean system resource utilization")
+        axes[1, 1].set_ylabel("Utilization (%)")
+        axes[1, 1].set_xlabel("")
+        axes[1, 1].legend(["CPU", "RAM", "GPU"], fontsize=8)
+        axes[1, 1].tick_params(axis="x", labelrotation=60, labelsize=7)
+        axes[1, 1].grid(axis="y", alpha=0.25)
+    else:
+        axes[1, 1].text(0.5, 0.5, "No resource data available", ha="center", va="center")
+        axes[1, 1].set_axis_off()
+
+    ordered_models = list(fps_summary.index)
+    fps_samples = [df.loc[df["model"] == model, "fps"].dropna().values for model in ordered_models]
+    axes[1, 2].boxplot(fps_samples, labels=ordered_models, showmeans=True)
+    axes[1, 2].set_title("FPS distribution across iterations")
+    axes[1, 2].set_ylabel("Frames per second")
+    axes[1, 2].tick_params(axis="x", labelrotation=60, labelsize=7)
+    axes[1, 2].grid(axis="y", alpha=0.25)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    plot_filename = os.path.join(
+        figures_dir,
+        f"performance_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    )
+    fig.savefig(plot_filename, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Gráfico consolidado salvo: {plot_filename}")
+
+
+def _json_safe(value):
+    """Converte valores NumPy e estruturas aninhadas para tipos aceitos pelo JSON."""
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "tolist"):
+        return _json_safe(value.tolist())
+    if hasattr(value, "item"):
+        return _json_safe(value.item())
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _distribution_version(package_name):
+    """Retorna a versão instalada ou None quando não há metadados disponíveis."""
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Salvar imagens anotadas
-        for model_name, image in annotated_images.items():
-            filename = os.path.join(OUTPUT_DIR, f"{model_name}_{iteration}_{timestamp}.jpg")
-            cv2.imwrite(filename, image)
-        
-        # Salvar dados JSON detalhados
-        json_filename = os.path.join(OUTPUT_DIR, f"benchmark_{iteration}_{timestamp}.json")
-        benchmark_data = {
-            "timestamp": datetime.now().isoformat(),
-            "iteration": iteration,
-            "models": {}
-        }
-        
-        for model_name, data in results_dict.items():
-            if data is not None:
-                benchmark_data["models"][model_name] = {
-                    "processing_time": data["processing_time"],
-                    "objects_count": data["objects_count"],
-                    "max_confidence": data["max_confidence"],
-                    "avg_confidence": data["avg_confidence"],
-                    "objects": data["objects"]
-                }
-        
-        with open(json_filename, 'w', encoding='utf-8') as f:
-            json.dump(benchmark_data, f, indent=2, ensure_ascii=False)
-        
-        # Salvar métricas em CSV
-        if METRICS_DATA:
-            csv_filename = os.path.join(OUTPUT_DIR, "metrics_summary.csv")
-            df = pd.DataFrame(METRICS_DATA)
-            df.to_csv(csv_filename, index=False)
-            print(f"📈 Métricas CSV: {csv_filename}")
-        
-        print(f"💾 Arquivos da iteração {iteration} salvos:")
-        print(f"   📸 {len(annotated_images)} imagens anotadas")
-        print(f"   📊 Dados: {json_filename}")
-        
-        return benchmark_data
-        
-    except Exception as e:
-        print(f"❌ Erro ao salvar resultados: {e}")
+        return metadata.version(package_name)
+    except metadata.PackageNotFoundError:
         return None
 
+
+def _runtime_metadata():
+    """Registra informações observáveis do ambiente em que o benchmark foi executado."""
+    try:
+        gpu_info = [
+            {"name": str(gpu.name), "memory_total_mb": float(gpu.memoryTotal)}
+            for gpu in GPUtil.getGPUs()
+        ]
+    except Exception:
+        gpu_info = []
+
+    try:
+        import torch
+        torch_info = {
+            "version": str(torch.__version__),
+            "cuda_available": bool(torch.cuda.is_available()),
+            "cuda_version": str(torch.version.cuda) if torch.version.cuda else None,
+            "cuda_devices": [
+                torch.cuda.get_device_name(index)
+                for index in range(torch.cuda.device_count())
+            ] if torch.cuda.is_available() else []
+        }
+    except Exception:
+        torch_info = {}
+
+    return {
+        "python_version": sys.version.split()[0],
+        "operating_system": platform.platform(),
+        "processor": platform.processor() or platform.machine(),
+        "logical_cpu_count": psutil.cpu_count(logical=True),
+        "system_ram_total_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
+        "gpu_devices": gpu_info,
+        "software": {
+            "ultralytics": _distribution_version("ultralytics"),
+            "torch": torch_info,
+            "opencv": _distribution_version("opencv-python") or _distribution_version("opencv-python-headless"),
+            "numpy": _distribution_version("numpy"),
+            "pandas": _distribution_version("pandas"),
+            "matplotlib": _distribution_version("matplotlib"),
+            "psutil": _distribution_version("psutil"),
+            "GPUtil": _distribution_version("GPUtil")
+        }
+    }
+
+
+def save_benchmark_results(annotated_images, results_dict, iteration):
+    """Salva imagens, JSON detalhado e CSVs acumulados sem acessar campos inexistentes."""
+    try:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        annotated_dir = os.path.join(OUTPUT_DIR, "annotated_images")
+        os.makedirs(annotated_dir, exist_ok=True)
+
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+        for model_name, image in annotated_images.items():
+            filename = os.path.join(annotated_dir, f"{model_name}_{iteration}_{timestamp}.jpg")
+            if not cv2.imwrite(filename, image):
+                print(f"Aviso: não foi possível salvar a imagem de {model_name}: {filename}")
+
+        model_records = {}
+        for model_name, data in results_dict.items():
+            if data is None:
+                continue
+            model_records[model_name] = {
+                "model_file": YOLO_MODELS.get(model_name),
+                "processing_time_s": data.get("processing_time"),
+                "processing_time_std_s": data.get("time_std"),
+                "fps": data.get("fps"),
+                "objects_count": data.get("objects_count"),
+                "unique_classes": data.get("unique_classes"),
+                "confidence_stats": data.get("confidence_stats", {}),
+                "class_counts": data.get("class_counts", {}),
+                "class_performance": data.get("class_performance", {}),
+                "size_stats": data.get("size_stats", {}),
+                "resource_usage": data.get("resource_usage", {}),
+                "objects": data.get("objects", [])
+            }
+
+        image_metadata = {}
+        sample_image = next(iter(annotated_images.values()), None)
+        if sample_image is not None and hasattr(sample_image, "shape"):
+            image_metadata = {
+                "width": int(sample_image.shape[1]),
+                "height": int(sample_image.shape[0])
+            }
+
+        benchmark_data = {
+            "schema_version": "1.0",
+            "timestamp": now.isoformat(),
+            "iteration": iteration,
+            "image": image_metadata,
+            "runtime": _runtime_metadata(),
+            "models": model_records
+        }
+
+        json_filename = os.path.join(OUTPUT_DIR, f"benchmark_{iteration}_{timestamp}.json")
+        with open(json_filename, "w", encoding="utf-8") as output_file:
+            json.dump(_json_safe(benchmark_data), output_file, indent=2, ensure_ascii=False, allow_nan=False)
+
+        if METRICS_DATA:
+            metrics_filename = os.path.join(OUTPUT_DIR, "metrics_summary.csv")
+            pd.DataFrame(METRICS_DATA).to_csv(metrics_filename, index=False)
+            print(f"CSV de métricas salvo: {metrics_filename}")
+
+        if RESOURCE_DATA:
+            resources_filename = os.path.join(OUTPUT_DIR, "resources_summary.csv")
+            pd.DataFrame(RESOURCE_DATA).to_csv(resources_filename, index=False)
+            print(f"CSV de recursos salvo: {resources_filename}")
+
+        if CLASS_PERFORMANCE_DATA:
+            classes_filename = os.path.join(OUTPUT_DIR, "class_performance.csv")
+            pd.DataFrame(CLASS_PERFORMANCE_DATA).to_csv(classes_filename, index=False)
+            print(f"CSV por classe salvo: {classes_filename}")
+
+        print(f"Arquivos da iteração {iteration} salvos:")
+        print(f"  Imagens anotadas: {len(annotated_images)}")
+        print(f"  Dados JSON: {json_filename}")
+        return benchmark_data
+
+    except Exception as error:
+        print(f"Erro ao salvar resultados da iteração {iteration}: {error}")
+        return None
+
+
 def generate_final_report():
-    """Gera relatório final com estatísticas consolidadas"""
+    """Gera relatório consolidado com as métricas efetivamente coletadas."""
     if not METRICS_DATA:
+        print("Não há métricas para gerar o relatório final.")
         return
-    
+
     df = pd.DataFrame(METRICS_DATA)
-    
-    # Estatísticas por modelo
-    stats = df.groupby('model').agg({
-        'processing_time': ['mean', 'std', 'min', 'max'],
-        'objects_count': ['mean', 'std', 'min', 'max'],
-        'avg_confidence': ['mean', 'std', 'min', 'max'],
-        'max_confidence': ['mean', 'std', 'min', 'max']
-    }).round(4)
-    
-    # Salva relatório
-    report_filename = os.path.join(OUTPUT_DIR, f"final_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-    
-    with open(report_filename, 'w', encoding='utf-8') as f:
-        f.write("=" * 80 + "\n")
-        f.write("YOLO MULTI-VERSION BENCHMARK - FINAL REPORT\n")
-        f.write("=" * 80 + "\n\n")
-        
-        f.write(f"Total iterations: {df['iteration'].max()}\n")
-        f.write(f"Models tested: {', '.join(df['model'].unique())}\n")
-        f.write(f"Analysis period: {df['timestamp'].min()} to {df['timestamp'].max()}\n\n")
-        
-        f.write("PERFORMANCE STATISTICS:\n")
-        f.write("-" * 40 + "\n")
-        f.write(str(stats))
-        f.write("\n\n")
-        
-        # Rankings
-        f.write("FINAL RANKINGS:\n")
-        f.write("-" * 40 + "\n")
-        
-        f.write("\n1. FASTEST MODELS (avg processing time):\n")
-        fastest = df.groupby('model')['processing_time'].mean().sort_values()
-        for i, (model, time_avg) in enumerate(fastest.items(), 1):
-            f.write(f"   {i}º {model}: {time_avg:.3f}s\n")
-        
-        f.write("\n2. BEST DETECTION RATE (avg objects detected):\n")
-        best_detection = df.groupby('model')['objects_count'].mean().sort_values(ascending=False)
-        for i, (model, count_avg) in enumerate(best_detection.items(), 1):
-            f.write(f"   {i}º {model}: {count_avg:.1f} objects\n")
-        
-        f.write("\n3. HIGHEST CONFIDENCE (avg confidence):\n")
-        best_confidence = df.groupby('model')['avg_confidence'].mean().sort_values(ascending=False)
-        for i, (model, conf_avg) in enumerate(best_confidence.items(), 1):
-            f.write(f"   {i}º {model}: {conf_avg:.3f}\n")
-    
-    print(f"📋 Relatório final salvo: {report_filename}")
+    aggregation = {
+        "processing_time": ["mean", "std", "min", "max"],
+        "fps": ["mean", "std", "min", "max"],
+        "objects_count": ["mean", "std", "min", "max"],
+        "confidence_mean": ["mean", "std", "min", "max"],
+        "confidence_max": ["mean", "std", "min", "max"]
+    }
+    stats = df.groupby("model").agg(aggregation).round(4)
+
+    report_filename = os.path.join(
+        OUTPUT_DIR,
+        f"final_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    )
+
+    with open(report_filename, "w", encoding="utf-8") as report_file:
+        report_file.write("=" * 80 + "\n")
+        report_file.write("NAO MULTI-YOLO BENCHMARK — FINAL REPORT\n")
+        report_file.write("=" * 80 + "\n\n")
+        report_file.write(f"Iterations recorded: {df['iteration'].nunique()}\n")
+        report_file.write(f"Models recorded: {df['model'].nunique()}\n")
+        report_file.write(f"Analysis period: {df['timestamp'].min()} to {df['timestamp'].max()}\n\n")
+
+        report_file.write("PER-MODEL DESCRIPTIVE STATISTICS\n")
+        report_file.write("-" * 80 + "\n")
+        report_file.write(stats.to_string())
+        report_file.write("\n\n")
+
+        fastest = df.groupby("model")["fps"].mean().sort_values(ascending=False)
+        report_file.write("RANKING BY MEAN FPS\n")
+        report_file.write("-" * 80 + "\n")
+        for rank, (model_name, mean_fps) in enumerate(fastest.items(), 1):
+            report_file.write(f"{rank:2d}. {model_name}: {mean_fps:.2f} FPS\n")
+
+        confidence = df.groupby("model")["confidence_mean"].mean().sort_values(ascending=False)
+        report_file.write("\nRANKING BY MEAN DETECTION CONFIDENCE SCORE\n")
+        report_file.write("-" * 80 + "\n")
+        for rank, (model_name, mean_score) in enumerate(confidence.items(), 1):
+            report_file.write(f"{rank:2d}. {model_name}: {mean_score:.4f}\n")
+
+        if RESOURCE_DATA:
+            resource_df = pd.DataFrame(RESOURCE_DATA)
+            resource_stats = resource_df.groupby("model")[
+                ["cpu_avg", "memory_avg", "gpu_avg"]
+            ].mean().round(2)
+            report_file.write("\nMEAN SYSTEM RESOURCE UTILIZATION (%)\n")
+            report_file.write("-" * 80 + "\n")
+            report_file.write(resource_stats.to_string())
+            report_file.write("\n")
+
+        report_file.write(
+            "\nNOTE: Detection confidence scores are model output scores; "
+            "they are not accuracy, precision, recall, or mAP measurements.\n"
+        )
+        report_file.write(
+            "CPU, RAM, and GPU percentages are system-level samples collected "
+            "during each model run, not isolated per-process measurements.\n"
+        )
+
+    print(f"Relatório final salvo: {report_filename}")
+
 
 # ---------------------------
 # Main loop
